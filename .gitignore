@@ -1,0 +1,16 @@
+# Build output
+GetUpAndWalk.app/
+build/
+*.icns
+*.iconset/
+*.o
+*.swiftmodule
+
+# macOS
+.DS_Store
+__MACOSX/
+
+# Personal data — must never be committed
+log.json
+*.csv
+*.zip
