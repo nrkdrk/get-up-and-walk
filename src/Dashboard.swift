@@ -39,9 +39,11 @@ final class DashboardController: NSObject, NSWindowDelegate {
         DockPresence.windowOpened()
         NSApp.activate(ignoringOtherApps: true)
 
+        // No .fullSizeContentView: the dashboard scrolls, and content sliding
+        // under the title bar and the traffic lights reads as a glitch.
         let w = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 940, height: 740),
-            styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
+            styleMask: [.titled, .closable, .miniaturizable, .resizable],
             backing: .buffered, defer: false
         )
         w.title = L.t("Kalk Yürü", "Get Up and Walk")

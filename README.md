@@ -8,6 +8,12 @@ A macOS menu-bar app that breaks a desk-bound day into healthy intervals — and
   <img src="assets/icon.png" width="180" alt="Get Up and Walk">
 </p>
 
+<p align="center">
+  <img src="assets/screenshots/dashboard.png" width="820" alt="The dashboard: calf circumference, left-right difference, weight and a 12-week consistency heatmap">
+</p>
+
+> The screenshots on this page come from a demo profile with sample measurements.
+
 ## Why
 
 Sitting for hours slows circulation, pools blood in the legs, and wears down the neck and shoulders. Most break reminders nag you about one thing and keep no record. This one manages several reminders from a single place, logs every outcome, and charts what you measure.
@@ -16,7 +22,14 @@ The interface and the spoken reminders come in Turkish and English. Everything e
 
 ## What it does
 
-**Reminders.** A small card appears near the top of the screen, plays a soft chime, then speaks your name: *"Berk, you need to stand up and walk."* It closes itself after 20 seconds. **Done** logs a completion, timing out logs a miss, **10 min** snoozes.
+**Reminders.** A small card appears near the top of the screen, plays a soft chime, then speaks your name: *"Alex, you need to stand up and walk."* It closes itself after 20 seconds. **Done** logs a completion, timing out logs a miss, **10 min** snoozes. Reminders that collect a number stay open and take keyboard focus instead.
+
+<table>
+<tr>
+<td width="50%"><img src="assets/screenshots/reminder.png" alt="A reminder card: Time to move, with a countdown, a 10 min snooze and a Done button"></td>
+<td width="50%"><img src="assets/screenshots/reminder-measure.png" alt="A measurement card: weekly calf measurement with a field for each leg"></td>
+</tr>
+</table>
 
 | Reminder | Schedule | On by default |
 |---|---|---|
@@ -39,7 +52,11 @@ Each can be toggled independently from the menu bar or the dashboard. You can al
 
 **Optional vitals.** Resting pulse and blood oxygen are off by default. Their subtitles say when to take the reading — before getting up, after five minutes at rest; fingertip, hand warm and still — because a measurement taken any other way is noise, not information. Once a day is the whole point; measuring more often produces a chart of your circumstances, not your health. Their charts carry a dashed line at 100 bpm and 94 %, and that is all they do: the app draws the line and plots the point. It renders no verdict, colours nothing by judgement, and raises no alerts.
 
-**Dashboard.** ⌘D opens a window with today's summary, your day streak, calf and weight trends, a 12-week consistency heatmap, and a table of every reminder with its next fire time.
+**Dashboard.** ⌘D opens a window with today's summary, your day streak, calf and weight trends, a 12-week consistency heatmap, and a table of every reminder with its next fire time. Further down are the optional vitals and anything you measure yourself — the blood-pressure card below is a user-written reminder, not a built-in one.
+
+<p align="center">
+  <img src="assets/screenshots/dashboard-vitals.png" width="820" alt="Lower half of the dashboard: pulse and oxygen charts, a user-written blood pressure card, and the reminder table">
+</p>
 
 **Your data stays local.** Everything lives in `~/Library/Application Support/GetUpAndWalk/log.json`. No network calls, no account, no telemetry. One menu click exports a CSV to the Desktop, which is handy to bring to a doctor's appointment.
 
@@ -76,7 +93,8 @@ src/Dashboard.swift    dashboard window
 src/App.swift          menu bar, app entry point
 build.sh              compile, icon, bundle
 make_icon.py          icon generation (needs Pillow)
-assets/icon.png       source icon, converted to .icns at build time
+assets/icon.png        source icon, converted to .icns at build time
+assets/screenshots/    README screenshots
 ```
 
 `build.sh` compiles every `.swift` under `src/`, converts `assets/icon.png` into an `.icns` with `sips` and `iconutil`, writes `Info.plist`, and ad-hoc signs the bundle. GitHub Actions runs the same script on every push.
@@ -84,6 +102,10 @@ assets/icon.png       source icon, converted to .icns at build time
 Charts are drawn by hand with `Path` rather than Swift Charts. That keeps the build dependency-free and makes room for things a stock chart will not give you, like the threshold line.
 
 ## Adding a reminder
+
+<p align="center">
+  <img src="assets/screenshots/editor.png" width="760" alt="The reminder editor: title, subtitle, spoken sentence, SF Symbol, colour, schedule and measurement fields">
+</p>
 
 **In the app.** Press **＋** in the dashboard's Reminders card, or pick *New reminder…* from the menu bar. You give it a title, a spoken sentence, an SF Symbol, a colour, and a schedule — every so many minutes, daily at a time, or weekly on a day. Switch on **Collects a measurement** and it prompts for up to three numbers instead of a plain acknowledgement; each field can carry its own dashed reference line. Anything you measure gets its own dashboard chart and its own CSV column. Custom reminders live in `~/Library/Application Support/GetUpAndWalk/custom-reminders.json`. Deleting one leaves its logged history in the log file.
 
