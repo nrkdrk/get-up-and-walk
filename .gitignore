@@ -1,6 +1,7 @@
 # Build output
 GetUpAndWalk.app/
 build/
+*.dmg
 *.icns
 *.iconset/
 *.o

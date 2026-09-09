@@ -70,10 +70,26 @@ $ICON_KEY
 PLIST
 
 # --- Compile -----------------------------------------------------------
-echo "Compiling..."
-swiftc -O "${SOURCES[@]}" -o "$APP/Contents/MacOS/$BINARY" \
-  -framework SwiftUI -framework AppKit -framework AVFoundation \
-  -parse-as-library
+# UNIVERSAL=1 builds both architectures and lipos them into one binary, which
+# is what the release workflow ships so the download runs on Intel Macs too.
+# A plain local build targets this machine only, and is quicker for it.
+FRAMEWORKS=(-framework SwiftUI -framework AppKit -framework AVFoundation)
+
+if [ "${UNIVERSAL:-0}" = "1" ]; then
+  echo "Compiling (universal)..."
+  mkdir -p build
+  for arch in arm64 x86_64; do
+    echo "  $arch"
+    swiftc -O "${SOURCES[@]}" -o "build/$BINARY-$arch" \
+      -target "$arch-apple-macos13.0" "${FRAMEWORKS[@]}" -parse-as-library
+  done
+  lipo -create -output "$APP/Contents/MacOS/$BINARY" \
+    "build/$BINARY-arm64" "build/$BINARY-x86_64"
+else
+  echo "Compiling..."
+  swiftc -O "${SOURCES[@]}" -o "$APP/Contents/MacOS/$BINARY" \
+    "${FRAMEWORKS[@]}" -parse-as-library
+fi
 
 echo "Signing (ad-hoc)..."
 codesign --force --sign - "$APP" 2>/dev/null || echo "Signing skipped."

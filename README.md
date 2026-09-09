@@ -1,6 +1,7 @@
 # Get Up and Walk
 
 [![build](https://github.com/nrkdrk/get-up-and-walk/actions/workflows/build.yml/badge.svg)](https://github.com/nrkdrk/get-up-and-walk/actions/workflows/build.yml)
+[![release](https://img.shields.io/github/v/release/nrkdrk/get-up-and-walk?label=download)](https://github.com/nrkdrk/get-up-and-walk/releases/latest)
 
 A macOS menu-bar app that breaks a desk-bound day into healthy intervals — and keeps a record so you can see the trend. No dependencies, one command to build.
 
@@ -62,6 +63,20 @@ Each can be toggled independently from the menu bar or the dashboard. You can al
 
 ## Install
 
+### Download the built app
+
+Take the `.dmg` from the [latest release](https://github.com/nrkdrk/get-up-and-walk/releases/latest), open it, and drag the app into Applications. One universal build covers Apple Silicon and Intel. Every release is built and packaged by GitHub Actions from the tagged commit, and ships a `.sha256` next to it.
+
+**The first launch needs one extra step, and it is worth understanding why.** The build is ad-hoc signed and not notarized by Apple, because notarizing means paying for a Developer ID. macOS therefore refuses to open it, sometimes claiming the app is damaged. It is not damaged; that message is what any un-notarized app looks like from the outside. To open it anyway:
+
+- **macOS 15 and later** — try to open it once, dismiss the warning, then go to **System Settings → Privacy & Security**, scroll to the message naming Get Up and Walk, and press **Open Anyway**.
+- **Earlier versions** — Control-click the app in Finder, choose **Open**, then **Open** again in the dialog.
+- **Or in a terminal** — `xattr -dr com.apple.quarantine /Applications/GetUpAndWalk.app`
+
+You are taking my word that the binary matches the source. If you would rather not, the alternative below is one command.
+
+### Build it yourself
+
 Requires Xcode Command Line Tools (`xcode-select --install`). Nothing else.
 
 ```bash
@@ -71,9 +86,11 @@ cd get-up-and-walk
 open GetUpAndWalk.app
 ```
 
-To keep it running, move `GetUpAndWalk.app` to `/Applications` and add it under **System Settings → General → Login Items**.
+A local build targets your own machine. `UNIVERSAL=1 ./build.sh` produces the two-architecture binary the releases ship.
 
-The binary is ad-hoc signed, not notarized by Apple. If macOS blocks the first launch, allow it under **System Settings → Privacy & Security**.
+### Either way
+
+To keep it running, move `GetUpAndWalk.app` to `/Applications` and add it under **System Settings → General → Login Items**.
 
 On first launch you fill in a short profile: language, name, height, weight, and — optionally — whether you have varicose or leg vein complaints. That last answer decides which leg-circulation reminders start switched on. Every reminder stays individually adjustable afterwards.
 
@@ -98,6 +115,8 @@ assets/screenshots/    README screenshots
 ```
 
 `build.sh` compiles every `.swift` under `src/`, converts `assets/icon.png` into an `.icns` with `sips` and `iconutil`, writes `Info.plist`, and ad-hoc signs the bundle. GitHub Actions runs the same script on every push.
+
+Pushing a `v*` tag runs it again with `UNIVERSAL=1`, packages the bundle into a `.dmg`, and attaches it to a release. That job refuses to publish if the tag and `CFBundleShortVersionString` disagree, so a release can never claim a version the bundle does not carry.
 
 Charts are drawn by hand with `Path` rather than Swift Charts. That keeps the build dependency-free and makes room for things a stock chart will not give you, like the threshold line.
 

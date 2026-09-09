@@ -1,0 +1,112 @@
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  dmg:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Show toolchain
+        run: swift --version
+
+      - name: Build a universal bundle
+        run: UNIVERSAL=1 ./build.sh
+
+      - name: Read the bundle version
+        id: version
+        run: |
+          version=$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" \
+            GetUpAndWalk.app/Contents/Info.plist)
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "Bundle version: $version"
+
+      - name: Refuse a tag that disagrees with the bundle version
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          bundle="${{ steps.version.outputs.version }}"
+          if [ "$tag" != "$bundle" ]; then
+            echo "Tag $GITHUB_REF_NAME says $tag, build.sh writes $bundle." >&2
+            echo "Bump CFBundleShortVersionString in build.sh, or retag." >&2
+            exit 1
+          fi
+
+      - name: Verify the bundle
+        run: |
+          test -x GetUpAndWalk.app/Contents/MacOS/GetUpAndWalk
+          plutil -lint GetUpAndWalk.app/Contents/Info.plist
+          archs=$(lipo -archs GetUpAndWalk.app/Contents/MacOS/GetUpAndWalk)
+          echo "Architectures: $archs"
+          case "$archs" in
+            *arm64*) ;;
+            *) echo "Missing arm64 slice." >&2; exit 1 ;;
+          esac
+          case "$archs" in
+            *x86_64*) ;;
+            *) echo "Missing x86_64 slice." >&2; exit 1 ;;
+          esac
+          codesign --verify --strict GetUpAndWalk.app
+
+      - name: Package the disk image
+        run: |
+          version="${{ steps.version.outputs.version }}"
+          dmg="GetUpAndWalk-$version.dmg"
+          stage=$(mktemp -d)
+          cp -R GetUpAndWalk.app "$stage/"
+          ln -s /Applications "$stage/Applications"
+          hdiutil create -volname "Get Up and Walk" -srcfolder "$stage" \
+            -ov -format UDZO "$dmg"
+          shasum -a 256 "$dmg" | tee "$dmg.sha256"
+          echo "DMG=$dmg" >> "$GITHUB_ENV"
+
+      - name: Upload the disk image as a build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: GetUpAndWalk-${{ steps.version.outputs.version }}-dmg
+          path: |
+            ${{ env.DMG }}
+            ${{ env.DMG }}.sha256
+
+      - name: Publish the release
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cat > notes.md <<'NOTES'
+          Download `GetUpAndWalk-VERSION.dmg` below, open it, and drag the app to
+          Applications. The binary is universal — Apple Silicon and Intel.
+
+          **The first launch needs one extra step.** This build is ad-hoc signed
+          and not notarized by Apple, so macOS will refuse to open it and may
+          claim it is damaged. It is not; the claim is what an un-notarized app
+          looks like from the outside.
+
+          - **macOS 15 and later:** try to open it once, dismiss the warning,
+            then go to **System Settings → Privacy & Security**, scroll to the
+            message naming Get Up and Walk, and press **Open Anyway**.
+          - **Earlier versions:** Control-click the app in Finder, choose
+            **Open**, then **Open** again in the dialog.
+          - **Or from a terminal:**
+            `xattr -dr com.apple.quarantine /Applications/GetUpAndWalk.app`
+
+          If that trade is not one you want to make, build it yourself instead —
+          it is one command and needs only the Xcode Command Line Tools.
+
+          Verify the download against `.sha256` if you like:
+          `shasum -a 256 -c GetUpAndWalk-VERSION.dmg.sha256`
+          NOTES
+          sed -i '' "s/VERSION/${{ steps.version.outputs.version }}/g" notes.md
+
+          gh release create "$GITHUB_REF_NAME" \
+            --title "$GITHUB_REF_NAME" \
+            --notes-file notes.md \
+            "$DMG" "$DMG.sha256" \
+          || gh release upload "$GITHUB_REF_NAME" "$DMG" "$DMG.sha256" --clobber
