@@ -11,21 +11,21 @@ final class PanelController {
 
     var isIdle: Bool { panel == nil }
 
-    func show(kind: Kind) {
+    func show(def: ReminderDef) {
         if panel != nil { close() }
 
-        let fields = kind.inputFields
+        let fields = def.fields
         let needsInput = !fields.isEmpty
         let height: CGFloat = needsInput ? CGFloat(152 + fields.count * 40) : 152
         let size = NSSize(width: 340, height: height)
 
         let view = ReminderView(
-            kind: kind,
+            def: def,
             width: size.width,
             height: height,
-            onDone:   { [weak self] values in self?.finish(kind, .done, values) },
-            onSnooze: { [weak self] in self?.finishSnooze(kind) },
-            onExpire: { [weak self] in self?.finish(kind, .missed, nil) }
+            onDone:   { [weak self] values in self?.finish(def.id, .done, values) },
+            onSnooze: { [weak self] in self?.finishSnooze(def.id) },
+            onExpire: { [weak self] in self?.finish(def.id, .missed, nil) }
         )
 
         let p = KeyablePanel(contentRect: NSRect(origin: .zero, size: size),
@@ -54,12 +54,12 @@ final class PanelController {
         }
         panel = p
 
-        NSSound(named: NSSound.Name(kind.sound))?.play()
+        NSSound(named: NSSound.Name(def.soundName))?.play()
 
         // Let the chime finish before speaking.
         let name = ProfileStore.shared.profile.displayName
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.9) {
-            Speaker.shared.say(kind.spoken(name: name))
+            Speaker.shared.say(def.spoken(name: name))
         }
     }
 
@@ -69,26 +69,26 @@ final class PanelController {
         panel = nil
     }
 
-    private func finish(_ kind: Kind, _ outcome: Outcome, _ values: [String: Double]?) {
+    private func finish(_ id: String, _ outcome: Outcome, _ values: [String: Double]?) {
         close()
-        Store.shared.record(kind, outcome, values: values)
+        Store.shared.record(id, outcome, values: values)
     }
 
-    private func finishSnooze(_ kind: Kind) {
+    private func finishSnooze(_ id: String) {
         close()
-        Store.shared.snooze(kind)
+        Store.shared.snooze(id)
     }
 }
 
 struct ReminderView: View {
-    let kind: Kind
+    let def: ReminderDef
     let width: CGFloat
     let height: CGFloat
     let onDone: ([String: Double]?) -> Void
     let onSnooze: () -> Void
     let onExpire: () -> Void
 
-    private let fields: [InputField]
+    private let fields: [FieldDef]
 
     @State private var remaining: Int
     @State private var inputs: [String]
@@ -96,33 +96,33 @@ struct ReminderView: View {
 
     private let tick = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
 
-    init(kind: Kind, width: CGFloat, height: CGFloat,
+    init(def: ReminderDef, width: CGFloat, height: CGFloat,
          onDone: @escaping ([String: Double]?) -> Void,
          onSnooze: @escaping () -> Void,
          onExpire: @escaping () -> Void) {
-        self.kind = kind
+        self.def = def
         self.width = width
         self.height = height
         self.onDone = onDone
         self.onSnooze = onSnooze
         self.onExpire = onExpire
-        self.fields = kind.inputFields
-        _remaining = State(initialValue: kind.autoCloseSeconds ?? 0)
-        _inputs = State(initialValue: Array(repeating: "", count: kind.inputFields.count))
+        self.fields = def.fields
+        _remaining = State(initialValue: def.autoCloseSeconds ?? 0)
+        _inputs = State(initialValue: Array(repeating: "", count: def.fields.count))
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack(spacing: 12) {
                 ZStack {
-                    Circle().fill(kind.tint.opacity(0.16)).frame(width: 42, height: 42)
-                    Image(systemName: kind.icon)
+                    Circle().fill(def.tint.opacity(0.16)).frame(width: 42, height: 42)
+                    Image(systemName: def.iconName)
                         .font(.system(size: 19, weight: .semibold))
-                        .foregroundStyle(kind.tint)
+                        .foregroundStyle(def.tint)
                 }
                 VStack(alignment: .leading, spacing: 3) {
-                    Text(kind.title).font(.system(size: 15, weight: .semibold))
-                    Text(kind.subtitle).font(.system(size: 13)).foregroundStyle(.secondary)
+                    Text(def.title).font(.system(size: 15, weight: .semibold))
+                    Text(def.subtitle).font(.system(size: 13)).foregroundStyle(.secondary)
                 }
                 Spacer(minLength: 0)
             }
@@ -131,7 +131,7 @@ struct ReminderView: View {
                 VStack(spacing: 8) {
                     ForEach(Array(fields.enumerated()), id: \.offset) { pair in
                         HStack {
-                            Text(pair.element.label)
+                            Text(pair.element.displayLabel)
                                 .font(.system(size: 13))
                                 .foregroundStyle(.secondary)
                             Spacer()
@@ -148,7 +148,7 @@ struct ReminderView: View {
             }
 
             HStack(spacing: 8) {
-                if kind.autoCloseSeconds != nil {
+                if def.autoCloseSeconds != nil {
                     Text(L.t("\(remaining) sn", "\(remaining)s"))
                         .font(.system(size: 12, design: .monospaced))
                         .foregroundStyle(.secondary)
@@ -157,7 +157,7 @@ struct ReminderView: View {
 
                 Spacer()
 
-                if kind.snoozable {
+                if def.snoozable {
                     Button(L.t("10 dk", "10 min"), action: onSnooze)
                         .buttonStyle(.bordered)
                         .controlSize(.large)
@@ -169,7 +169,7 @@ struct ReminderView: View {
                         .frame(width: 80)
                 }
                 .buttonStyle(.borderedProminent)
-                .tint(kind.tint)
+                .tint(def.tint)
                 .controlSize(.large)
             }
         }
@@ -182,7 +182,7 @@ struct ReminderView: View {
         )
         .onAppear { if !fields.isEmpty { focused = 0 } }
         .onReceive(tick) { _ in
-            guard kind.autoCloseSeconds != nil else { return }
+            guard def.autoCloseSeconds != nil else { return }
             remaining -= 1
             if remaining <= 0 { onExpire() }
         }

@@ -5,11 +5,22 @@ let numberFont = Font.system(size: 30, weight: .medium, design: .rounded).monosp
 struct Card<Content: View>: View {
     let title: String
     let note: String?
+    let accessory: AnyView?
     let content: Content
 
     init(title: String, note: String? = nil, @ViewBuilder content: () -> Content) {
         self.title = title
         self.note = note
+        self.accessory = nil
+        self.content = content()
+    }
+
+    init<A: View>(title: String, note: String? = nil,
+                  @ViewBuilder accessory: () -> A,
+                  @ViewBuilder content: () -> Content) {
+        self.title = title
+        self.note = note
+        self.accessory = AnyView(accessory())
         self.content = content()
     }
 
@@ -24,6 +35,9 @@ struct Card<Content: View>: View {
                     Text(note)
                         .font(.system(size: 11))
                         .foregroundStyle(.tertiary)
+                }
+                if let accessory {
+                    accessory
                 }
             }
             content
@@ -67,6 +81,9 @@ struct LineChart: View {
     var reference: (value: Double, label: String)? = nil
     var unit: String = ""
     var height: CGFloat = 190
+    /// Pins the y-range instead of deriving it from the data, so a threshold
+    /// stays in view and the distance to it stays readable.
+    var forcedBounds: (min: Double, max: Double)? = nil
 
     private var allValues: [Double] {
         series.flatMap { $0.points.map { $0.value } } + (reference.map { [$0.value] } ?? [])
@@ -96,13 +113,20 @@ struct LineChart: View {
                         series: series,
                         reference: reference,
                         count: pointCount,
-                        bounds: LineChart.bounds(for: allValues),
+                        bounds: forcedBounds ?? LineChart.bounds(for: allValues),
                         size: geo.size
                     )
                 }
                 .frame(height: height)
 
                 LineChartLegend(series: series, unit: unit)
+
+                if pointCount == 1 {
+                    Text(L.t("Trend için ikinci ölçüm gerekli",
+                             "A second measurement will start the trend"))
+                        .font(.system(size: 11))
+                        .foregroundStyle(.tertiary)
+                }
             }
         }
     }

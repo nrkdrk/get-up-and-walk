@@ -31,41 +31,31 @@ final class Store: ObservableObject {
     static let shared = Store()
 
     @Published private(set) var entries: [LogEntry] = []
-    @Published private(set) var lastFired: [Kind: Date] = [:]
-    @Published private(set) var snoozeUntil: [Kind: Date] = [:]
+    @Published private(set) var lastFired: [String: Date] = [:]
+    @Published private(set) var snoozeUntil: [String: Date] = [:]
 
-    @Published var enabled: Set<Kind> = [] { didSet { persistEnabled() } }
+    @Published var enabled: Set<String> = [] { didSet { persistEnabled() } }
     @Published var paused = false
     @Published var activeStartHour = 8  { didSet { UserDefaults.standard.set(activeStartHour, forKey: "startHour") } }
     @Published var activeEndHour   = 23 { didSet { UserDefaults.standard.set(activeEndHour,   forKey: "endHour") } }
 
     private var tick: Timer?
 
-    private let dir: URL = {
-        let support = FileManager.default
-            .urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-        let base = support.appendingPathComponent("GetUpAndWalk", isDirectory: true)
-        try? FileManager.default.createDirectory(at: base, withIntermediateDirectories: true)
+    private let enabledKey = "enabledReminders"
 
-        // Carry over the log written by builds before the 2.1 rename.
-        let legacy = support.appendingPathComponent("KalkYuru/log.json")
-        let current = base.appendingPathComponent("log.json")
-        if FileManager.default.fileExists(atPath: legacy.path),
-           !FileManager.default.fileExists(atPath: current.path) {
-            try? FileManager.default.copyItem(at: legacy, to: current)
-        }
-        return base
-    }()
-
-    var logURL: URL { dir.appendingPathComponent("log.json") }
+    var logURL: URL { AppSupport.logURL }
 
     private init() {
         let d = UserDefaults.standard
         activeStartHour = d.object(forKey: "startHour") as? Int ?? 8
         activeEndHour   = d.object(forKey: "endHour")   as? Int ?? 23
 
-        if let saved = d.array(forKey: "enabledKinds") as? [String] {
-            enabled = Set(saved.compactMap(Kind.init(rawValue:)))
+        if let saved = d.array(forKey: enabledKey) as? [String] {
+            enabled = Set(saved)
+        } else if let legacy = d.array(forKey: "enabledKinds") as? [String] {
+            // Selections stored by builds that keyed on the Kind raw value.
+            enabled = Set(legacy.map(ReminderDef.canonicalID))
+            persistEnabled()
         } else {
             enabled = []
         }
@@ -74,12 +64,21 @@ final class Store: ObservableObject {
 
         // Nothing is overdue at launch, so the user is not flooded on startup.
         let now = Date()
-        for k in Kind.allCases { lastFired[k] = now }
+        for def in ReminderStore.shared.all { lastFired[def.id] = now }
     }
 
     /// Sets the initial reminder selection from the onboarding answer.
     func applyDefaults(varicose: VaricoseStatus) {
-        enabled = Set(Kind.allCases.filter { $0.defaultEnabled(varicose: varicose) })
+        enabled = Set(Kind.allCases
+            .filter { $0.defaultEnabled(varicose: varicose) }
+            .map { $0.definition.id })
+    }
+
+    /// Drops the scheduling state of a reminder the user deleted.
+    func forget(_ id: String) {
+        enabled.remove(id)
+        lastFired[id] = nil
+        snoozeUntil[id] = nil
     }
 
     // MARK: Scheduling
@@ -99,23 +98,23 @@ final class Store: ObservableObject {
         guard secondsIdle < 600 else { return }   // already away from the desk
 
         let now = Date()
-        for kind in Kind.allCases where enabled.contains(kind) {
-            if let until = snoozeUntil[kind], until > now { continue }
-            if kind.schedule.respectsActiveHours && !insideActiveHours(now) { continue }
-            guard isDue(kind, now: now) else { continue }
+        for def in ReminderStore.shared.all where enabled.contains(def.id) {
+            if let until = snoozeUntil[def.id], until > now { continue }
+            if def.schedule.respectsActiveHours && !insideActiveHours(now) { continue }
+            guard isDue(def, now: now) else { continue }
 
-            lastFired[kind] = now
-            snoozeUntil[kind] = nil
-            PanelController.shared.show(kind: kind)
+            lastFired[def.id] = now
+            snoozeUntil[def.id] = nil
+            PanelController.shared.show(def: def)
             return   // one card at a time
         }
     }
 
-    private func isDue(_ kind: Kind, now: Date) -> Bool {
+    private func isDue(_ def: ReminderDef, now: Date) -> Bool {
         let cal = Calendar.current
-        switch kind.schedule {
+        switch def.schedule {
         case .interval(let minutes):
-            guard let last = lastFired[kind] else { return true }
+            guard let last = lastFired[def.id] else { return true }
             return now.timeIntervalSince(last) >= Double(minutes * 60)
 
         case .daily(let h, let m):
@@ -123,26 +122,26 @@ final class Store: ObservableObject {
                                          matching: DateComponents(hour: h, minute: m),
                                          matchingPolicy: .nextTime,
                                          direction: .backward) else { return false }
-            return (lastFired[kind] ?? Date.distantPast) < occ
+            return (lastFired[def.id] ?? Date.distantPast) < occ
 
         case .weekly(let wd, let h, let m):
             guard let occ = cal.nextDate(after: now,
                                          matching: DateComponents(hour: h, minute: m, weekday: wd),
                                          matchingPolicy: .nextTime,
                                          direction: .backward) else { return false }
-            return (lastFired[kind] ?? Date.distantPast) < occ
+            return (lastFired[def.id] ?? Date.distantPast) < occ
         }
     }
 
-    func nextDue(_ kind: Kind) -> Date? {
-        guard enabled.contains(kind), !paused else { return nil }
+    func nextDue(_ def: ReminderDef) -> Date? {
+        guard enabled.contains(def.id), !paused else { return nil }
         let cal = Calendar.current
         let now = Date()
-        if let until = snoozeUntil[kind], until > now { return until }
+        if let until = snoozeUntil[def.id], until > now { return until }
 
-        switch kind.schedule {
+        switch def.schedule {
         case .interval(let minutes):
-            guard let last = lastFired[kind] else { return now }
+            guard let last = lastFired[def.id] else { return now }
             return last.addingTimeInterval(Double(minutes * 60))
         case .daily(let h, let m):
             return cal.nextDate(after: now, matching: DateComponents(hour: h, minute: m),
@@ -153,10 +152,10 @@ final class Store: ObservableObject {
         }
     }
 
-    var upNext: (Kind, Date)? {
-        let pairs: [(Kind, Date)] = Kind.allCases.compactMap { k in
-            guard let d = nextDue(k) else { return nil }
-            return (k, d)
+    var upNext: (ReminderDef, Date)? {
+        let pairs: [(ReminderDef, Date)] = ReminderStore.shared.all.compactMap { def in
+            guard let d = nextDue(def) else { return nil }
+            return (def, d)
         }
         return pairs.min { $0.1 < $1.1 }
     }
@@ -179,24 +178,24 @@ final class Store: ObservableObject {
 
     // MARK: Recording
 
-    func record(_ kind: Kind, _ outcome: Outcome, values: [String: Double]? = nil) {
-        entries.append(LogEntry(date: Date(), kind: kind, outcome: outcome, values: values))
+    func record(_ id: String, _ outcome: Outcome, values: [String: Double]? = nil) {
+        entries.append(LogEntry(date: Date(), reminderID: id, outcome: outcome, values: values))
         saveLog()
 
         // A weigh-in also updates the stored profile weight.
-        if kind == .weighIn, let w = values?["weight"] {
+        if id == Kind.weighIn.definition.id, let w = values?["weight"] {
             ProfileStore.shared.profile.weightKg = w
         }
     }
 
-    func snooze(_ kind: Kind, minutes: Int = 10) {
-        snoozeUntil[kind] = Date().addingTimeInterval(Double(minutes * 60))
-        record(kind, .snoozed)
+    func snooze(_ id: String, minutes: Int = 10) {
+        snoozeUntil[id] = Date().addingTimeInterval(Double(minutes * 60))
+        record(id, .snoozed)
     }
 
-    func fireNow(_ kind: Kind) {
-        lastFired[kind] = Date()
-        PanelController.shared.show(kind: kind)
+    func fireNow(_ def: ReminderDef) {
+        lastFired[def.id] = Date()
+        PanelController.shared.show(def: def)
     }
 
     // MARK: Summaries
@@ -208,15 +207,29 @@ final class Store: ObservableObject {
     var todayMissed: Int { todayCount(.missed) }
     var todaySnoozed: Int { todayCount(.snoozed) }
 
-    func todayCount(_ kind: Kind, _ outcome: Outcome) -> Int {
+    func todayCount(_ id: String, _ outcome: Outcome) -> Int {
         entries.filter {
-            Calendar.current.isDateInToday($0.date) && $0.kind == kind && $0.outcome == outcome
+            Calendar.current.isDateInToday($0.date) && $0.reminderID == id && $0.outcome == outcome
         }.count
     }
 
+    /// Every recorded value of one field of one reminder, oldest first.
+    func points(_ id: String, _ key: String) -> [DataPoint] {
+        entries.compactMap { e in
+            guard e.reminderID == id, e.outcome == .done,
+                  let v = e.values?[key] else { return nil }
+            return DataPoint(date: e.date, value: v)
+        }
+    }
+
+    func hasData(_ def: ReminderDef) -> Bool {
+        def.fields.contains { !points(def.id, $0.key).isEmpty }
+    }
+
     var calfSeries: (left: [DataPoint], right: [DataPoint], diff: [DataPoint]) {
+        let id = Kind.calfMeasurement.definition.id
         var l: [DataPoint] = [], r: [DataPoint] = [], d: [DataPoint] = []
-        for e in entries where e.kind == .calfMeasurement && e.outcome == .done {
+        for e in entries where e.reminderID == id && e.outcome == .done {
             guard let v = e.values,
                   let lv = v["calf_left"],
                   let rv = v["calf_right"] else { continue }
@@ -227,13 +240,9 @@ final class Store: ObservableObject {
         return (l, r, d)
     }
 
-    var weightSeries: [DataPoint] {
-        entries.compactMap { e in
-            guard e.kind == .weighIn, e.outcome == .done,
-                  let w = e.values?["weight"] else { return nil }
-            return DataPoint(date: e.date, value: w)
-        }
-    }
+    var weightSeries: [DataPoint] { points(Kind.weighIn.definition.id, "weight") }
+    var pulseSeries: [DataPoint] { points(Kind.restingPulse.definition.id, "pulse_bpm") }
+    var oxygenSeries: [DataPoint] { points(Kind.bloodOxygen.definition.id, "spo2_pct") }
 
     func dailyDone(days: Int) -> [(date: Date, count: Int)] {
         let cal = Calendar.current
@@ -284,7 +293,7 @@ final class Store: ObservableObject {
     // MARK: Persistence
 
     private func persistEnabled() {
-        UserDefaults.standard.set(enabled.map { $0.rawValue }, forKey: "enabledKinds")
+        UserDefaults.standard.set(Array(enabled), forKey: enabledKey)
     }
 
     private func saveLog() {
@@ -301,20 +310,24 @@ final class Store: ObservableObject {
         entries = (try? dec.decode([LogEntry].self, from: data)) ?? []
     }
 
+    /// One column per measurement key that appears anywhere in the log, so
+    /// user-defined measurements are exported alongside the built-in ones.
     @discardableResult
     func exportCSV() -> URL? {
         let df = ISO8601DateFormatter()
-        var rows = ["date,kind,outcome,calf_left,calf_right,weight"]
+        let keys = Set(entries.flatMap { ($0.values ?? [:]).keys }).sorted()
+
+        var rows = [(["date", "reminder", "outcome"] + keys).joined(separator: ",")]
         for e in entries {
             let v = e.values ?? [:]
-            func num(_ key: String) -> String {
-                if let d = v[key] { return String(format: "%.1f", d) }
-                return ""
+            let numbers = keys.map { key -> String in
+                guard let d = v[key] else { return "" }
+                return String(format: "%.1f", d)
             }
-            let row = [df.string(from: e.date), e.kind.rawValue, e.outcome.rawValue,
-                       num("calf_left"), num("calf_right"), num("weight")]
+            let row = [df.string(from: e.date), e.reminderID, e.outcome.rawValue] + numbers
             rows.append(row.joined(separator: ","))
         }
+
         let stamp = DateFormatter()
         stamp.dateFormat = "yyyy-MM-dd"
         let url = FileManager.default.urls(for: .desktopDirectory, in: .userDomainMask)[0]

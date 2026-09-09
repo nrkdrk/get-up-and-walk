@@ -4,6 +4,7 @@ import AppKit
 struct MenuContent: View {
     @ObservedObject private var store = Store.shared
     @ObservedObject private var profiles = ProfileStore.shared
+    @ObservedObject private var reminders = ReminderStore.shared
 
     var body: some View {
         Button(L.t("Paneli aç", "Open dashboard")) {
@@ -25,21 +26,27 @@ struct MenuContent: View {
         Divider()
 
         Menu(L.t("Hatırlatıcılar", "Reminders")) {
-            ForEach(Kind.allCases) { kind in
+            ForEach(reminders.all) { def in
                 Toggle(isOn: Binding(
-                    get: { store.enabled.contains(kind) },
+                    get: { store.enabled.contains(def.id) },
                     set: { on in
-                        if on { store.enabled.insert(kind) } else { store.enabled.remove(kind) }
+                        if on { store.enabled.insert(def.id) } else { store.enabled.remove(def.id) }
                     }
                 )) {
-                    Text("\(kind.title) — \(kind.schedule.describe)")
+                    Text("\(def.title) — \(def.schedule.describe)")
                 }
+            }
+
+            Divider()
+
+            Button(L.t("Yeni hatırlatıcı…", "New reminder…")) {
+                EditorPresenter.shared.create()
             }
         }
 
         Menu(L.t("Şimdi tetikle", "Trigger now")) {
-            ForEach(Kind.allCases) { kind in
-                Button(kind.title) { store.fireNow(kind) }
+            ForEach(reminders.all) { def in
+                Button(def.title) { store.fireNow(def) }
             }
         }
 

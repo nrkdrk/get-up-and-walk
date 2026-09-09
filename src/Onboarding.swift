@@ -6,12 +6,14 @@ final class OnboardingController: NSObject, NSWindowDelegate {
     private var window: NSWindow?
 
     func show(firstRun: Bool) {
-        NSApp.activate(ignoringOtherApps: true)
-
         if let w = window {
+            NSApp.activate(ignoringOtherApps: true)
             w.makeKeyAndOrderFront(nil)
             return
         }
+
+        DockPresence.windowOpened()
+        NSApp.activate(ignoringOtherApps: true)
 
         let w = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 460, height: 560),
@@ -39,6 +41,7 @@ final class OnboardingController: NSObject, NSWindowDelegate {
 
     func windowWillClose(_ notification: Notification) {
         window = nil
+        DockPresence.windowClosed()
     }
 }
 
@@ -107,7 +110,7 @@ struct OnboardingView: View {
 
                         if profiles.profile.voiceEnabled && canFinish {
                             Button(L.t("Dinle", "Preview")) {
-                                Speaker.shared.say(Kind.move.spoken(name: profiles.profile.displayName))
+                                Speaker.shared.say(Kind.move.definition.spoken(name: profiles.profile.displayName))
                             }
                             .buttonStyle(.bordered)
                             .controlSize(.small)

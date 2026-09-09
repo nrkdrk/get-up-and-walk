@@ -28,12 +28,16 @@ The interface and the spoken reminders come in Turkish and English. Everything e
 | Weekly calf measurement | Sunday 09:00 | depends on profile |
 | Ankle pumps | every 30 min | depends on profile |
 | Eye break (20-20-20) | every 20 min | no |
+| Resting pulse | daily 08:00 | no |
+| Blood oxygen | daily 08:05 | no |
 
-Each can be toggled independently from the menu bar or the dashboard.
+Each can be toggled independently from the menu bar or the dashboard. You can also write your own — see **Adding a reminder** below.
 
 **Stays out of the way.** Interval reminders never fire outside your active hours (default 08:00–23:00). Nothing fires while the screen is locked, or after ten minutes without keyboard or mouse input — you are already away from the desk, so logging a "miss" would be wrong. The reminder window is a non-activating panel: it never steals focus while you type.
 
-**Measurement tracking.** The weekly weigh-in and calf measurement prompt for numbers instead of a plain acknowledgement. The calf chart plots left, right, and the difference between them, with a dashed threshold line at 3 cm — asymmetry is the number worth watching, so the chart shows it directly rather than making you subtract.
+**Measurement tracking.** The weekly weigh-in and calf measurement prompt for numbers instead of a plain acknowledgement, and so do the two optional vitals. Asymmetry is the number worth watching in a calf, so the difference gets a chart of its own: left and right share one scale, and the difference between them sits on a second chart pinned to include 0 and the 3 cm line. On a shared axis a 2 cm difference and a 3 cm threshold are a pixel apart, which reads as though the reading sits on the line — separating them is what makes the distance legible.
+
+**Optional vitals.** Resting pulse and blood oxygen are off by default. Their subtitles say when to take the reading — before getting up, after five minutes at rest; fingertip, hand warm and still — because a measurement taken any other way is noise, not information. Once a day is the whole point; measuring more often produces a chart of your circumstances, not your health. Their charts carry a dashed line at 100 bpm and 94 %, and that is all they do: the app draws the line and plots the point. It renders no verdict, colours nothing by judgement, and raises no alerts.
 
 **Dashboard.** ⌘D opens a window with today's summary, your day streak, calf and weight trends, a 12-week consistency heatmap, and a table of every reminder with its next fire time.
 
@@ -61,13 +65,15 @@ The app lives entirely in the menu bar and never appears in the Dock. If you can
 ## Project layout
 
 ```
-src/Model.swift       reminder kinds, profile, localization
-src/Store.swift       scheduling engine, log, speech
-src/Reminder.swift    reminder panel and card
-src/Charts.swift      hand-drawn charts, heatmap
-src/Onboarding.swift  profile setup screen
-src/Dashboard.swift   dashboard window
-src/App.swift         menu bar, app entry point
+src/Model.swift        reminder definitions, profile, localization
+src/ReminderStore.swift built-in and user-written definitions
+src/Store.swift        scheduling engine, log, speech
+src/Reminder.swift     reminder panel and card
+src/Charts.swift       hand-drawn charts, heatmap
+src/Editor.swift       reminder editor sheet
+src/Onboarding.swift   profile setup screen
+src/Dashboard.swift    dashboard window
+src/App.swift          menu bar, app entry point
 build.sh              compile, icon, bundle
 make_icon.py          icon generation (needs Pillow)
 assets/icon.png       source icon, converted to .icns at build time
@@ -79,13 +85,17 @@ Charts are drawn by hand with `Path` rather than Swift Charts. That keeps the bu
 
 ## Adding a reminder
 
-Add a case to the `Kind` enum in `src/Model.swift` and fill in its title, spoken sentence, icon, colour, and schedule. The scheduler, the reminder panel, the dashboard row, the CSV export, and both languages pick it up automatically.
+**In the app.** Press **＋** in the dashboard's Reminders card, or pick *New reminder…* from the menu bar. You give it a title, a spoken sentence, an SF Symbol, a colour, and a schedule — every so many minutes, daily at a time, or weekly on a day. Switch on **Collects a measurement** and it prompts for up to three numbers instead of a plain acknowledgement; each field can carry its own dashed reference line. Anything you measure gets its own dashboard chart and its own CSV column. Custom reminders live in `~/Library/Application Support/GetUpAndWalk/custom-reminders.json`. Deleting one leaves its logged history in the log file.
+
+**In the code.** Built-ins are cases of the `Kind` enum in `src/Model.swift`; each one returns a `ReminderDef`, the same value type user-written reminders decode into. The scheduler, the reminder panel, the dashboard, the CSV export, and both languages read `ReminderDef` and never the enum, so filling in a new case is all it takes.
 
 ## Disclaimer
 
 This is a software tool, not a medical device. Its reminders and thresholds come from general health guidance; it does not diagnose or treat anything. The 3 cm calf-asymmetry line is a widely cited clinical rule of thumb, included as a prompt to seek advice — not as a diagnosis.
 
-If you have swelling, pain, warmth, discoloration, or one-sided asymmetry in a leg, see a doctor. Sudden one-sided calf swelling with pain warrants same-day attention. The records this app keeps are data you can bring to a consultation, never a substitute for one.
+The same holds for the vitals. The 100 bpm and 94 % lines mark where a reading is worth mentioning to a doctor, nothing more. A single number below or above a line is not a diagnosis, and neither is a run of them: a consumer pulse oximeter is affected by cold hands, nail polish, movement, and skin tone, and a resting pulse moves with sleep, caffeine, illness, and stress. The app deliberately renders no verdict on any reading — it draws the line, plots the point, and leaves the reading to you and your doctor. Do not use it to rule anything out.
+
+If you have swelling, pain, warmth, discoloration, or one-sided asymmetry in a leg, see a doctor. Sudden one-sided calf swelling with pain warrants same-day attention. Shortness of breath or chest pain warrants urgent attention whatever a number on a screen says. The records this app keeps are data you can bring to a consultation, never a substitute for one.
 
 ## License
 
