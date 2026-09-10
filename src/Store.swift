@@ -40,6 +40,9 @@ final class Store: ObservableObject {
     @Published var activeEndHour   = 23 { didSet { UserDefaults.standard.set(activeEndHour,   forKey: "endHour") } }
 
     private var tick: Timer?
+    /// Keeps App Nap from throttling the tick while no window is on screen,
+    /// which is exactly when a reminder app is meant to be working.
+    private var activity: NSObjectProtocol?
 
     private let enabledKey = "enabledReminders"
 
@@ -85,6 +88,12 @@ final class Store: ObservableObject {
 
     func start() {
         tick?.invalidate()
+        if activity == nil {
+            // Allows idle system sleep: reminders should not keep the Mac awake.
+            activity = ProcessInfo.processInfo.beginActivity(
+                options: .userInitiatedAllowingIdleSystemSleep,
+                reason: "Reminders fire on a schedule")
+        }
         let t = Timer(timeInterval: 20, repeats: true) { [weak self] _ in self?.evaluate() }
         RunLoop.main.add(t, forMode: .common)
         tick = t
@@ -172,8 +181,13 @@ final class Store: ObservableObject {
         return (info["CGSSessionScreenIsLocked"] as? Int) == 1
     }
 
+    /// Any keyboard, mouse or tablet input (kCGAnyInputEventType). `.null` is
+    /// an event type of its own, not a wildcard: on an active desk it reported
+    /// hours of idleness, so every tick treated the user as away and returned.
+    private static let anyInputEvent = CGEventType(rawValue: ~0)!
+
     private var secondsIdle: Double {
-        CGEventSource.secondsSinceLastEventType(.combinedSessionState, eventType: .null)
+        CGEventSource.secondsSinceLastEventType(.combinedSessionState, eventType: Store.anyInputEvent)
     }
 
     // MARK: Recording
