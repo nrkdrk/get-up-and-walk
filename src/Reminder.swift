@@ -11,6 +11,10 @@ final class PanelController {
     /// The reminder on screen, so an answer from Notification Center can be
     /// matched to the card it belongs to.
     private var currentID: String?
+    /// Identifies the card on screen. Each card's callbacks carry the token it
+    /// was shown with, so a callback from a card that has already closed can
+    /// never log an outcome or close the card that replaced it.
+    private var currentCard: UUID?
 
     var isIdle: Bool { panel == nil }
 
@@ -24,13 +28,14 @@ final class PanelController {
         let height: CGFloat = needsInput ? CGFloat(152 + fields.count * 40) : 152
         let size = NSSize(width: 340, height: height)
 
+        let card = UUID()
         let view = ReminderView(
             def: def,
             width: size.width,
             height: height,
-            onDone:   { [weak self] values in self?.finish(def.id, .done, values) },
-            onSnooze: { [weak self] in self?.finishSnooze(def.id) },
-            onExpire: { [weak self] in self?.finish(def.id, .missed, nil) }
+            onDone:   { [weak self] values in self?.finish(card, def.id, .done, values) },
+            onSnooze: { [weak self] in self?.finishSnooze(card, def.id) },
+            onExpire: { [weak self] in self?.finish(card, def.id, .missed, nil) }
         )
 
         let p = KeyablePanel(contentRect: NSRect(origin: .zero, size: size),
@@ -59,6 +64,7 @@ final class PanelController {
         }
         panel = p
         currentID = def.id
+        currentCard = card
 
         NSSound(named: NSSound.Name(def.soundName))?.play()
         if automatic { NotificationBridge.shared.post(def) }
@@ -72,12 +78,21 @@ final class PanelController {
 
     private func close() {
         Speaker.shared.stop()
-        panel?.orderOut(nil)
+        if let old = panel {
+            old.orderOut(nil)
+            // Tear the SwiftUI view down with the window, a turn later so a card
+            // is never freed from inside its own callback. Ordering out alone
+            // left the card's one-second timer running, and a card that had
+            // timed out went on reporting itself missed every second.
+            DispatchQueue.main.async { old.contentView = nil }
+        }
         panel = nil
         currentID = nil
+        currentCard = nil
     }
 
-    private func finish(_ id: String, _ outcome: Outcome, _ values: [String: Double]?) {
+    private func finish(_ card: UUID, _ id: String, _ outcome: Outcome, _ values: [String: Double]?) {
+        guard card == currentCard else { return }
         close()
         // A missed reminder stays in Notification Center as the record of it;
         // an answered one has nothing left to say there.
@@ -85,7 +100,8 @@ final class PanelController {
         Store.shared.record(id, outcome, values: values)
     }
 
-    private func finishSnooze(_ id: String) {
+    private func finishSnooze(_ card: UUID, _ id: String) {
+        guard card == currentCard else { return }
         close()
         NotificationBridge.shared.withdraw(id)
         Store.shared.snooze(id)
