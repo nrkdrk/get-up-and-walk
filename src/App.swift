@@ -5,6 +5,7 @@ struct MenuContent: View {
     @ObservedObject private var store = Store.shared
     @ObservedObject private var profiles = ProfileStore.shared
     @ObservedObject private var reminders = ReminderStore.shared
+    @ObservedObject private var notifications = NotificationBridge.shared
 
     var body: some View {
         Button(L.t("Paneli aç", "Open dashboard")) {
@@ -75,6 +76,10 @@ struct MenuContent: View {
             Text(L.t("Sesli seslen", "Speak reminders"))
         }
 
+        Toggle(isOn: $notifications.enabled) {
+            Text(L.t("Bildirim Merkezi'ne de gönder", "Also post to Notification Center"))
+        }
+
         Button(store.paused ? L.t("Devam et", "Resume") : L.t("Duraklat", "Pause")) {
             store.paused.toggle()
         }
@@ -99,6 +104,8 @@ struct MenuContent: View {
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
+        // Before the scheduler starts, so every banner has a delegate to answer.
+        NotificationBridge.shared.start()
         Store.shared.start()
 
         if !ProfileStore.shared.profile.completed {

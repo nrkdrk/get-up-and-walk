@@ -114,7 +114,7 @@ final class Store: ObservableObject {
 
             lastFired[def.id] = now
             snoozeUntil[def.id] = nil
-            PanelController.shared.show(def: def)
+            PanelController.shared.show(def: def, automatic: true)
             return   // one card at a time
         }
     }

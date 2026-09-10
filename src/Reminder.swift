@@ -8,10 +8,15 @@ final class KeyablePanel: NSPanel {
 final class PanelController {
     static let shared = PanelController()
     private var panel: KeyablePanel?
+    /// The reminder on screen, so an answer from Notification Center can be
+    /// matched to the card it belongs to.
+    private var currentID: String?
 
     var isIdle: Bool { panel == nil }
 
-    func show(def: ReminderDef) {
+    /// `automatic` is true only for the scheduler; a manual trigger does not
+    /// also post to Notification Center.
+    func show(def: ReminderDef, automatic: Bool = false) {
         if panel != nil { close() }
 
         let fields = def.fields
@@ -53,8 +58,10 @@ final class PanelController {
             p.orderFrontRegardless()
         }
         panel = p
+        currentID = def.id
 
         NSSound(named: NSSound.Name(def.soundName))?.play()
+        if automatic { NotificationBridge.shared.post(def) }
 
         // Let the chime finish before speaking.
         let name = ProfileStore.shared.profile.displayName
@@ -67,16 +74,46 @@ final class PanelController {
         Speaker.shared.stop()
         panel?.orderOut(nil)
         panel = nil
+        currentID = nil
     }
 
     private func finish(_ id: String, _ outcome: Outcome, _ values: [String: Double]?) {
         close()
+        // A missed reminder stays in Notification Center as the record of it;
+        // an answered one has nothing left to say there.
+        if outcome != .missed { NotificationBridge.shared.withdraw(id) }
         Store.shared.record(id, outcome, values: values)
     }
 
     private func finishSnooze(_ id: String) {
         close()
+        NotificationBridge.shared.withdraw(id)
         Store.shared.snooze(id)
+    }
+
+    /// An answer given from a Notification Center banner. The card may still
+    /// be on screen, or it may have timed out already; then the answer arrives
+    /// late and is logged after the miss, which is what actually happened.
+    func answer(_ id: String, _ outcome: Outcome) {
+        if currentID == id { close() }
+        NotificationBridge.shared.withdraw(id)
+        if outcome == .snoozed {
+            Store.shared.snooze(id)
+        } else {
+            Store.shared.record(id, outcome)
+        }
+    }
+
+    /// A click on the banner brings whatever card is open forward, and puts the
+    /// tapped reminder back on screen only when none is. An open card is never
+    /// replaced: replacing one closes it without logging an outcome.
+    func bringForward(_ id: String) {
+        if let panel {
+            NSApp.activate(ignoringOtherApps: true)
+            panel.makeKeyAndOrderFront(nil)
+        } else if let def = ReminderStore.shared.definition(for: id) {
+            show(def: def)
+        }
     }
 }
 

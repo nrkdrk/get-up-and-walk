@@ -73,7 +73,7 @@ PLIST
 # UNIVERSAL=1 builds both architectures and lipos them into one binary, which
 # is what the release workflow ships so the download runs on Intel Macs too.
 # A plain local build targets this machine only, and is quicker for it.
-FRAMEWORKS=(-framework SwiftUI -framework AppKit -framework AVFoundation)
+FRAMEWORKS=(-framework SwiftUI -framework AppKit -framework AVFoundation -framework UserNotifications)
 
 if [ "${UNIVERSAL:-0}" = "1" ]; then
   echo "Compiling (universal)..."

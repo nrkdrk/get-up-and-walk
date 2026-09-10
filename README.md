@@ -25,6 +25,8 @@ The interface and the spoken reminders come in Turkish and English. Everything e
 
 **Reminders.** A small card appears near the top of the screen, plays a soft chime, then speaks your name: *"Alex, you need to stand up and walk."* It closes itself after 20 seconds. **Done** logs a completion, timing out logs a miss, **10 min** snoozes. Reminders that collect a number stay open and take keyboard focus instead.
 
+Scheduled reminders also post to Notification Center, so they are not lost when the card is on another display or behind a full-screen app. The banner's **Done** and **10 min** answer the card exactly as its own buttons do. An answered reminder is withdrawn from Notification Center; a missed one stays there as the record of it. A measurement can only be typed into the card, so its banner simply brings the card forward. Manual triggers never post, and a menu-bar switch turns the whole thing off.
+
 <table>
 <tr>
 <td width="50%"><img src="assets/screenshots/reminder.png" alt="A reminder card: Time to move, with a countdown, a 10 min snooze and a Done button"></td>
